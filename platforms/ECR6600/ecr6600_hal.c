@@ -127,17 +127,8 @@ int8_t uart_getc_timeout(uint8_t* out, uint32_t loops)
 
 void uart_set_baud(uint32_t baud)
 {
-	uint32_t uclk;
+	uint32_t uclk = 80000000;
 	uint32_t value = REG32(UARTC_LCR_REG);
-
-	uclk = (REG32(SOC_PD_UART_CLK_SEL) == 0) ? 40000000 : 80000000;
-
-	if(uclk == 40000000)
-	{
-		int crystal = g_efuse_ctrl;
-		if((crystal & EFUSE_CRYSTAL_OFFSET) == EFUSE_CRYSTAL_26M)
-			uclk = 26000000;
-	}
 
 	uint32_t bestOsc = 0;
 	uint32_t bestDiv = 0;

@@ -77,7 +77,8 @@
 #define OBK_CMD_RAW_XMODEM_UL      0x98U  /* target -> host absolute memory read */
 #define OBK_CMD_READ_EFUSE         0x99U
 #define OBK_CMD_READ_OTP           0x9AU
-#define OBK_CMD_JUMP_RAM           0x9FU
+#define OBK_CMD_JUMP               0x9FU
+#define OBK_CMD_AVAILABLE_CMDS     0xFFU
 
 #define OBK_STATUS_SUCCESS         0x00U
 #define OBK_STATUS_ERROR           0x01U
@@ -85,6 +86,8 @@
 #define OBK_STATUS_TYPE_ERROR      0x03U
 #define OBK_STATUS_LEN_ERROR       0x04U
 #define OBK_STATUS_CRC_ERROR       0x05U
+#define OBK_STATUS_NOT_SUPPORTED   0x10U
+#define OBK_STATUS_OTP_ERROR       0x11U
 
 #define SOH                        0x01U
 #define STX                        0x02U
