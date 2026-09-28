@@ -712,7 +712,7 @@ static void handle_obk_frame(void)
 			uint32_t baud = load_le32(cmd_buf);
 			// keep it compatible with original stub
 			uart_set_baud(baud);
-			delay_loops(1000000);
+			delay_loops(BAUD_DELAY);
 			obk_ack(type, OBK_STATUS_SUCCESS);
 			break;
 		}
@@ -797,7 +797,7 @@ static void handle_obk_frame(void)
 			uint32_t len = load_le32(cmd_buf + 4);
 			if(off + len > flash_size) { obk_ack(type, OBK_STATUS_ADDR_ERROR); return; }
 			obk_ack(type, OBK_STATUS_SUCCESS);
-			xmodem_send_memory(off, len);
+			xmodem_send_memory(FLASH_BASE + off, len);
 			break;
 		}
 		case OBK_CMD_FLASH_XMODEM_UL_Z:

@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <string.h>
 #define BUF_SIZE 0x6000
+#define BAUD_DELAY 1000000
 #if PLATFORM_W800
 #include "W800/w800_hal.h"
 #elif PLATFORM_RDA5981

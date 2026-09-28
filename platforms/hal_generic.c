@@ -364,7 +364,7 @@ int read_otp(void)
 __attribute__((weak))
 void stub_flash_read(void* dest, uint32_t off, size_t len)
 {
-	memcpy(dest, (void*)FLASH_BASE + off, len);
+	memcpy(dest, (void*)off, len);
 }
 
 __attribute__((weak))

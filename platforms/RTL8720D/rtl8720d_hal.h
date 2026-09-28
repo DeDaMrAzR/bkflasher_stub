@@ -8,6 +8,8 @@
 
 //#undef BUF_SIZE
 //#define BUF_SIZE (512 * 3)
+#undef BAUD_DELAY
+#define BAUD_DELAY 200000
 #define PLATFORM_SUPPORTS_OTP
 
 #define __I     volatile const       /*!< Defines 'read only' permissions                 */
