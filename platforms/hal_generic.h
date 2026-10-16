@@ -32,6 +32,8 @@
 #include "TR6260/tr6260_hal.h"
 #elif PLATFORM_OPL1000A2
 #include "OPL1000A2/opl1000a2_hal.h"
+#elif PLATFORM_SV6X66
+#include "SV6X66/sv6x66_hal.h"
 #endif
 
 #ifndef REG32

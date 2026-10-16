@@ -1,4 +1,5 @@
 /build/
+/TEST/
 /test-output/
 /w800_probe_out*/
 /W800_RawMem_Stub.bin
