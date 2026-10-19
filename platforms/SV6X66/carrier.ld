@@ -2,7 +2,7 @@ ENTRY(_carrier_header)
 
 MEMORY
 {
-	BANK_B (rx) : ORIGIN = 0x300A6000, LENGTH = 0x0001A000
+	BANK_B (rx) : ORIGIN = DEFINED(SV6X66_CARRIER_BASE) ? SV6X66_CARRIER_BASE : 0x300A6000, LENGTH = 0x0001A000
 	ILM (rwx)   : ORIGIN = 0x00007000, LENGTH = 0x00001000
 }
 
@@ -51,7 +51,7 @@ SECTIONS
 
 PROVIDE(_stack = 0x00120000);
 
-ASSERT(ADDR(.carrier_header) == 0x300A6000,
+ASSERT(ADDR(.carrier_header) == 0x300A6000 || ADDR(.carrier_header) == 0x3000B000,
 	"carrier must enter at the SV6x66 Bank-B base")
 ASSERT(SIZEOF(.carrier_header) == 4,
 	"carrier header must be one branch instruction")
@@ -61,7 +61,7 @@ ASSERT(ADDR(.rollback) == 0x00007000,
 	"rollback routine must execute from reserved ILM")
 ASSERT(__rollback_end__ <= 0x00008000,
 	"rollback routine overlaps SPI command SRAM")
-ASSERT(__carrier_image_end__ - ORIGIN(BANK_B) <= 0x00002000,
-	"carrier exceeds the 8 KiB first-validation ceiling")
+ASSERT(__carrier_image_end__ - ORIGIN(BANK_B) <= 0x00003000 - 32,
+	"carrier plus identity trailer exceeds the 12 KiB ceiling")
 ASSERT(0x00004000 + SIZEOF(.stub_payload) <= 0x00007000,
 	"restore stub copy overlaps rollback routine")

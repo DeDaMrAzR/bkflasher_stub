@@ -14,6 +14,7 @@
 #define HSUART_CLOCK_80M  8U
 
 static uint32_t prepared_baud_register;
+uint32_t sv6x66_carrier_bank;
 
 static void store_le32(uint8_t* output, uint32_t value)
 {
@@ -316,13 +317,16 @@ int crc32_memory(uint32_t addr, uint32_t len, uint32_t* result)
 
 extern int main(void);
 
-void __attribute__((noreturn)) sv6x66_boot_main(void)
+void __attribute__((noreturn)) sv6x66_boot_main(uint32_t carrier_bank, uint32_t handoff_magic)
 {
 	extern uint32_t __bss_start__[];
 	extern uint32_t __bss_end__[];
 	uint32_t* word = __bss_start__;
 
 	while(word < __bss_end__) *word++ = 0U;
+	/* Legacy staging has no handoff; only bank-aware carriers enable 0x9E. */
+	sv6x66_carrier_bank = handoff_magic == SV6X66_BANK_HANDOFF_MAGIC && carrier_bank < 2U ?
+		carrier_bank : 0xFFFFFFFFU;
 	main();
 	while(1) { }
 }

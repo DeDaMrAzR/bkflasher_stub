@@ -81,7 +81,17 @@ static void sv6x66_receive_region(void)
 	/* ECR-style preparation erases only this semantic range before the first C.
 	 * Any interruption leaves the current range unsafe until its final flash CRC. */
 	sv6x66_flags = SV6X66_ERASE_STARTED;
-	if(!stub_flash_erase_range_progress(sv6x66_offset, sv6x66_length, &sv6x66_erased)) goto failed;
+	if(sv6x66_application_mode) {
+		/* Application installation has exactly 155 separate sector commits;
+		 * the legacy full-restore erase selection below remains unchanged. */
+		while(sv6x66_erased < sv6x66_length) {
+			uint32_t completed;
+			if(!stub_flash_erase_range_progress(sv6x66_offset + sv6x66_erased,
+				FLASH_SECTOR_SIZE, &completed)) goto failed;
+			sv6x66_erased += completed;
+		}
+	}
+	else if(!stub_flash_erase_range_progress(sv6x66_offset, sv6x66_length, &sv6x66_erased)) goto failed;
 	status = SV6X66_STATUS_TRANSFER_ABORTED_RETRYABLE;
 	detail = SV6X66_TRANSFER_DETAIL_START_HANDSHAKE;
 	for(uint32_t tries = 0U; tries < 100U; tries++)
@@ -196,6 +206,7 @@ static void sv6x66_transaction_control(uint16_t data_len)
 	uint8_t operation = data_len ? cmd_buf[0] : 0U;
 	uint32_t attempt = data_len >= 13U ? load_le32(cmd_buf + 9) : 0U;
 	uint8_t error = SV6X66_STATUS_BAD_STATE;
+	if(sv6x66_application_mode) goto reject;
 	if(operation == 1U)
 	{
 		if(data_len != 41U) goto bad_length;

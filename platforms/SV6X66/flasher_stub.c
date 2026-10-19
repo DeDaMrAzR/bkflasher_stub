@@ -53,7 +53,9 @@ static void obk_data_reply(uint8_t type, const uint8_t* data, uint16_t len, uint
 	uart_putc(sum);
 }
 
+static uint8_t sv6x66_application_mode;
 #include "sv6x66_restore_transaction.h"
+#include "sv6x66_app_transaction.h"
 
 static void sv6x66_send_flash_crc32(uint8_t type, uint32_t off, uint32_t len)
 {
@@ -124,9 +126,7 @@ static void xmodem_send_memory(uint32_t addr, uint32_t len)
 		}
 		else
 		{
-			uint8_t sum = 0;
-			for(uint32_t i = 0; i < block_size; i++) sum = (uint8_t)(sum + packet[3 + i]);
-			packet[pkt_len++] = sum;
+			packet[pkt_len++] = obk_crc8_sum(&packet[3], block_size);
 		}
 
 		int sent = 0;
@@ -184,7 +184,20 @@ static void sv6x66_handle_command(uint8_t type, uint16_t data_len)
 			sv6x66_transaction_begin(data_len);
 			break;
 		case SV6X66_CMD_TRANSACTION:
-			sv6x66_transaction_control(data_len);
+			/* Unified bank-aware loaders retain the exact V3 restore schedule.
+			 * Failure at any point requires SPI recovery; no UART rollback
+			 * or preservation of the currently selected bank is promised. */
+#if SV6X66_BANK_AWARE
+			if(sv6x66_carrier_bank >= 2U) obk_ack(type, OBK_STATUS_NOT_SUPPORTED);
+			else sv6x66_transaction_control(data_len);
+#else
+			/* Legacy V3 restore belongs to the legacy carrier only. */
+			if(sv6x66_carrier_bank < 2U) obk_ack(type, OBK_STATUS_NOT_SUPPORTED);
+			else sv6x66_transaction_control(data_len);
+#endif
+			break;
+		case SV6X66_CMD_APPLICATION:
+			sv6x66_application_control(data_len);
 			break;
 		case OBK_CMD_BAUD_CHANGE:
 		{
@@ -237,7 +250,7 @@ static void sv6x66_handle_command(uint8_t type, uint16_t data_len)
 		case OBK_CMD_AVAILABLE_CMDS:
 		{
 			if(data_len != 0U) { obk_ack(type, OBK_STATUS_LEN_ERROR); return; }
-			const uint8_t cmds[] =
+			uint8_t cmds[] =
 			{
 				OBK_CMD_SYNC,
 				OBK_CMD_BAUD_CHANGE,
@@ -246,9 +259,13 @@ static void sv6x66_handle_command(uint8_t type, uint16_t data_len)
 				OBK_CMD_FLASH_ID,
 				OBK_CMD_FLASH_XMODEM_DL,
 				SV6X66_CMD_TRANSACTION,
+#if SV6X66_BANK_AWARE
+				SV6X66_CMD_APPLICATION,
+#endif
 				OBK_CMD_FLASH_XMODEM_UL,
 				OBK_CMD_AVAILABLE_CMDS,
 			};
+			/* Bank-aware loaders advertise both application and full restore. */
 			obk_data_reply(type, cmds, sizeof(cmds), OBK_STATUS_SUCCESS);
 			break;
 		}
@@ -280,8 +297,7 @@ static void handle_obk_frame(void)
 	}
 	if(!uart_getc_budget(&crc, &frame_budget)) return;
 
-	uint8_t sum = OBK_STUB_MAGIC + type + l0 + l1;
-	for(uint32_t i = 0; i < data_len; i++) sum = (uint8_t)(sum + cmd_buf[i]);
+	uint8_t sum = OBK_STUB_MAGIC + type + l0 + l1 + obk_crc8_sum(cmd_buf, data_len);
 	if(sum != crc)
 	{
 		obk_ack(type, OBK_STATUS_CRC_ERROR);

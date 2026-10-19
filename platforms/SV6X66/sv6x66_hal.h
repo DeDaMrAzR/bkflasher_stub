@@ -43,6 +43,8 @@ int stub_uart_prepare_baud(uint32_t baud, uint8_t* diagnostic);
 void stub_uart_commit_prepared_baud(void);
 int stub_flash_erase_range_progress(uint32_t off, uint32_t len, uint32_t* completed);
 int stub_flash_program_page_completed(uint32_t off, const uint8_t* data);
+extern uint32_t sv6x66_carrier_bank;
+#define SV6X66_BANK_HANDOFF_MAGIC 0x53423641U
 
 #define SPI_CMD_SRAM       0xC0001000U
 #define SPI_DATAIN_SRAM    0xC0001004U

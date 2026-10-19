@@ -22,6 +22,15 @@
 #define CMD_FAST_READ 0x0BU
 #define CMD_SECTOR_ERASE 0x20U
 #define CMD_READ_JEDEC_ID 0x9FU
+#define CMD_PAGE_PROGRAM 0x02U
+
+#ifndef SV6X66_BANK_AWARE
+#define SV6X66_BANK_AWARE 0
+#endif
+#ifndef SV6X66_CARRIER_BANK
+#define SV6X66_CARRIER_BANK 1
+#endif
+#define BANK_HANDOFF_MAGIC 0x53423641U
 
 #define BOOT_FLAG_OFFSET 0x00004000U
 #define BOOT_FLAG_XIP    0x30004000U
@@ -116,6 +125,39 @@ static ROLLBACK_TEXT uint32_t crc32_bytes(const uint8_t *data, uint32_t length)
 	return crc ^ 0xFFFFFFFFU;
 }
 
+#if SV6X66_BANK_AWARE
+static ROLLBACK_TEXT int selector_matches(uint32_t expected)
+{
+	for(uint32_t offset = 0U; offset < 0x1000U; offset += 256U) {
+		flash_fast_read(BOOT_FLAG_OFFSET + offset, 256U);
+		for(uint32_t i = 0U; i < 256U; i++) {
+			uint8_t byte = offset + i < 4U ? (uint8_t)(expected >> (i * 8U)) : 0xFFU;
+			if(spi_read_byte(i) != byte) return 0;
+		}
+	}
+	return 1;
+}
+
+static ROLLBACK_TEXT int selector_tail_is_erased(void)
+{
+	for(uint32_t offset = 0U; offset < 0x1000U; offset += 256U) {
+		flash_fast_read(BOOT_FLAG_OFFSET + offset, 256U);
+		for(uint32_t i = offset == 0U ? 4U : 0U; i < 256U; i++)
+			if(spi_read_byte(i) != 0xFFU) return 0;
+	}
+	return 1;
+}
+
+static ROLLBACK_TEXT void select_bank_b(void)
+{
+	for(uint32_t i = 0U; i < 256U; i += 4U)
+		REG32(SPI_PAYLOAD_BUFFER + i) = i == 0U ? 0U : 0xFFFFFFFFU;
+	flash_write_enable();
+	spi_issue(command_word(CMD_PAGE_PROGRAM, BOOT_FLAG_OFFSET), 260U, 0U);
+	flash_wait_ready();
+}
+#endif
+
 __attribute__((section(".rollback.entry"), used, noreturn))
 void sv6x66_rollback_entry(void)
 {
@@ -135,24 +177,49 @@ void sv6x66_rollback_entry(void)
 	REG32(SPI_CMD_SRAM) = SPI_CMD_BUFFER;
 	REG32(SPI_DATAIN_SRAM) = SPI_READ_BUFFER;
 
+#if SV6X66_BANK_AWARE
+	/* Only the exact CKW04 selector-sector profile is writable. Unknown tail
+	 * contents are never discarded. A reset before rollback re-enters this
+	 * carrier; after rollback it boots the untouched original application. */
+	const int profile_ok = read_jedec() == SV6X66_JEDEC_ID && selector_tail_is_erased();
+	const uint32_t rollback_selector = SV6X66_CARRIER_BANK == 0 ? 0U : 0xFFFFFFFFU;
+	while(profile_ok && !selector_matches(rollback_selector)) {
+		flash_sector_erase(BOOT_FLAG_OFFSET);
+		if(rollback_selector == 0U) select_bank_b();
+	}
+#else
+
 	/* This retry loop has no refusal/failure exit. The only transition out
 	 * of SRAM occurs after the complete boot-flag sector verifies erased. */
 	do {
 		flash_sector_erase(BOOT_FLAG_OFFSET);
 	} while(!boot_flag_sector_is_erased());
+#endif
 
 	REG32(SPI_CONTROL) = (REG32(SPI_CONTROL) & ~SPI_MODE_MASK) | inherited_mode;
 	spi_wait_idle();
 	__asm volatile("isb" ::: "memory");
-	if(REG32(BOOT_FLAG_XIP) != 0xFFFFFFFFU) for(;;) { }
+	if(
+#if SV6X66_BANK_AWARE
+		profile_ok &&
+#endif
+		REG32(BOOT_FLAG_XIP) !=
+#if SV6X66_BANK_AWARE
+		rollback_selector
+#else
+		0xFFFFFFFFU
+#endif
+	) for(;;) { }
 
 	/* The exact-profile gate is deliberately after rollback is armed. */
+#if !SV6X66_BANK_AWARE
 	REG32(SPI_CONTROL) &= ~SPI_MODE_MASK;
 	__asm volatile("isb" ::: "memory");
 	if(read_jedec() != SV6X66_JEDEC_ID) for(;;) { }
 	REG32(SPI_CONTROL) = (REG32(SPI_CONTROL) & ~SPI_MODE_MASK) | inherited_mode;
 	spi_wait_idle();
 	__asm volatile("isb" ::: "memory");
+#endif
 
 	for(uint32_t i = 0U; i < payload_length; i++)
 		destination[i] = __stub_payload_start[i];
@@ -162,7 +229,14 @@ void sv6x66_rollback_entry(void)
 		crc32_bytes((const uint8_t *)(uintptr_t)STUB_DESTINATION, payload_length))
 		for(;;) { }
 
+#if SV6X66_BANK_AWARE
+	/* NDS32 C ABI r0/r1 survive start.S until boot_main clears BSS. This
+	 * binds the writable bank to this linked carrier, not a host address. */
+	((void (*)(uint32_t, uint32_t))(uintptr_t)STUB_DESTINATION)(
+		SV6X66_CARRIER_BANK, BANK_HANDOFF_MAGIC);
+#else
 	((void (*)(void))(uintptr_t)STUB_DESTINATION)();
+#endif
 	for(;;) { }
 }
 
