@@ -2,6 +2,9 @@
  * SV6X66 owns command policy and the retained V3 restore lifecycle here. */
 #include "../hal_generic.h"
 
+#define SV6X66_ROM_START 0x00040000U
+#define SV6X66_ROM_END 0x00060000U
+
 __attribute__((aligned(4)))
 uint8_t cmd_buf[BUF_SIZE];
 __attribute__((aligned(4)))
@@ -79,7 +82,7 @@ static void sv6x66_send_flash_crc32(uint8_t type, uint32_t off, uint32_t len)
 	obk_data_reply(type, payload, sizeof(payload), OBK_STATUS_SUCCESS);
 }
 
-static void xmodem_send_memory(uint32_t addr, uint32_t len)
+static void xmodem_send_memory(uint32_t addr, uint32_t len, int read_rom)
 {
 	uint8_t resp;
 	int use_crc = 1;
@@ -110,7 +113,15 @@ static void xmodem_send_memory(uint32_t addr, uint32_t len)
 		packet[0] = use_1k ? STX : SOH;
 		packet[1] = block;
 		packet[2] = (uint8_t)~block;
-		if(addr + off < FLASH_BASE || !stub_flash_read_checked(&packet[3], addr + off - FLASH_BASE, chunk))
+		if(read_rom)
+		{
+			const volatile uint8_t* rom = (const volatile uint8_t*)(uintptr_t)(addr + off);
+			for(uint32_t i = 0U; i < chunk; i++)
+			{
+				packet[3 + i] = rom[i];
+			}
+		}
+		else if(addr + off < FLASH_BASE || !stub_flash_read_checked(&packet[3], addr + off - FLASH_BASE, chunk))
 		{
 			uart_putc(CAN);
 			uart_putc(CAN);
@@ -177,7 +188,22 @@ static void sv6x66_handle_command(uint8_t type, uint16_t data_len)
 				return;
 			}
 			obk_ack(type, OBK_STATUS_SUCCESS);
-			xmodem_send_memory(FLASH_BASE + off, len);
+			xmodem_send_memory(FLASH_BASE + off, len, 0);
+			break;
+		}
+		case OBK_CMD_RAW_XMODEM_UL:
+		{
+			if(data_len != 8U) { obk_ack(type, OBK_STATUS_LEN_ERROR); return; }
+			uint32_t addr = load_le32(cmd_buf);
+			uint32_t len = load_le32(cmd_buf + 4);
+			if(addr < SV6X66_ROM_START || addr >= SV6X66_ROM_END ||
+				len == 0U || len > SV6X66_ROM_END - addr)
+			{
+				obk_ack(type, OBK_STATUS_ADDR_ERROR);
+				return;
+			}
+			obk_ack(type, OBK_STATUS_SUCCESS);
+			xmodem_send_memory(addr, len, 1);
 			break;
 		}
 		case OBK_CMD_FLASH_XMODEM_DL:
@@ -263,6 +289,7 @@ static void sv6x66_handle_command(uint8_t type, uint16_t data_len)
 				SV6X66_CMD_APPLICATION,
 #endif
 				OBK_CMD_FLASH_XMODEM_UL,
+				OBK_CMD_RAW_XMODEM_UL,
 				OBK_CMD_AVAILABLE_CMDS,
 			};
 			/* Bank-aware loaders advertise both application and full restore. */
